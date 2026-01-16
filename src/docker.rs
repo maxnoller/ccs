@@ -3,6 +3,7 @@ use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
+use crate::auth::{self, ClaudeCredentials, CredentialSource};
 use crate::config::Config;
 use crate::git::GitContext;
 
@@ -63,6 +64,7 @@ pub struct DockerRunner {
     git_context: GitContext,
     mcp_config_path: Option<PathBuf>,
     container_name: String,
+    credentials: ClaudeCredentials,
 }
 
 impl DockerRunner {
@@ -74,6 +76,7 @@ impl DockerRunner {
     ) -> Result<Self, DockerError> {
         let runtime = ContainerRuntime::detect()?;
         let container_name = generate_container_name(&git_context.repo_name);
+        let credentials = auth::discover_credentials();
 
         Ok(DockerRunner {
             runtime,
@@ -81,6 +84,7 @@ impl DockerRunner {
             git_context: git_context.clone(),
             mcp_config_path,
             container_name,
+            credentials,
         })
     }
 
@@ -140,9 +144,7 @@ impl DockerRunner {
     pub fn run(&self, extra_args: &[String], detach: bool) -> anyhow::Result<()> {
         let mut cmd = Command::new(self.runtime.command());
 
-        cmd.arg("run")
-            .arg("--name")
-            .arg(&self.container_name);
+        cmd.arg("run").arg("--name").arg(&self.container_name);
 
         if detach {
             // Detached mode - run in background, don't remove on exit
@@ -189,16 +191,11 @@ impl DockerRunner {
                 .arg(format!("{}:{}", host_path.display(), container_path));
         }
 
-        // Mount Claude auth directory (read-write, Claude Code needs to write logs/state)
-        if let Some(home) = dirs::home_dir() {
-            let claude_dir = home.join(".claude");
-            if claude_dir.exists() {
-                cmd.arg("-v").arg(format!(
-                    "{}:/home/{}/.claude",
-                    claude_dir.display(),
-                    self.config.docker.user
-                ));
-            }
+        // Pass Claude credentials via environment variables (not mount)
+        // This is more secure - the container gets the token but can't
+        // access or modify host credential files
+        for (key, value) in auth::get_credential_env_vars(&self.credentials) {
+            cmd.arg("-e").arg(format!("{}={}", key, value));
         }
 
         // Mount MCP config if available
@@ -233,14 +230,13 @@ impl DockerRunner {
             cmd.arg(arg);
         }
 
-        // Set up proper TTY handling
-        cmd.stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-
         if detach {
             println!("Starting Claude Code sandbox (detached)...");
         } else {
+            // Set up proper TTY handling for interactive mode
+            cmd.stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
             println!("Starting Claude Code sandbox...");
         }
         println!("Runtime: {}", self.runtime.name());
@@ -248,6 +244,16 @@ impl DockerRunner {
         println!("Workspace: {}", self.git_context.workspace_path.display());
         if self.git_context.is_worktree {
             println!("(Running in git worktree)");
+        }
+        // Show credential source
+        match self.credentials.source {
+            CredentialSource::None => {
+                eprintln!("Warning: No Claude credentials found");
+                eprintln!("  Run 'claude login' on host, or set ANTHROPIC_API_KEY");
+            }
+            ref source => {
+                println!("Auth: {}", source);
+            }
         }
         if env_file_loaded {
             println!("Loaded .env: {}", self.config.docker.env_file_path);
@@ -265,11 +271,17 @@ impl DockerRunner {
             if output.status.success() {
                 let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 println!("Container started: {}", self.container_name);
-                println!("Container ID: {}", &container_id[..12.min(container_id.len())]);
+                println!(
+                    "Container ID: {}",
+                    &container_id[..12.min(container_id.len())]
+                );
                 println!();
                 println!("Commands:");
                 println!("  ccs --list              # List running sessions");
-                println!("  ccs --attach {}   # Attach to session", self.container_name);
+                println!(
+                    "  ccs --attach {}   # Attach to session",
+                    self.container_name
+                );
                 println!("  ccs --logs {}     # View logs", self.container_name);
                 println!("  ccs --stop {}     # Stop session", self.container_name);
             } else {
@@ -297,7 +309,14 @@ pub fn list_sessions() -> anyhow::Result<()> {
     let runtime = ContainerRuntime::detect()?;
 
     let output = Command::new(runtime.command())
-        .args(["ps", "-a", "--filter", "name=ccs-", "--format", "table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}"])
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            "name=ccs-",
+            "--format",
+            "table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}",
+        ])
         .output()?;
 
     if output.status.success() {
@@ -404,7 +423,14 @@ fn resolve_container_name(runtime: ContainerRuntime, partial: &str) -> anyhow::R
 
     // Try to find matching container
     let output = Command::new(runtime.command())
-        .args(["ps", "-a", "--filter", &format!("name={}", search_name), "--format", "{{.Names}}"])
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            &format!("name={}", search_name),
+            "--format",
+            "{{.Names}}",
+        ])
         .output()?;
 
     if output.status.success() {
@@ -459,6 +485,7 @@ pub struct RuntimeStatus {
     pub config_exists: bool,
     pub mcp_config_path: Option<PathBuf>,
     pub mcp_config_exists: bool,
+    pub credentials: ClaudeCredentials,
 }
 
 impl RuntimeStatus {
@@ -480,6 +507,8 @@ impl RuntimeStatus {
             .map(|p| p.exists())
             .unwrap_or(false);
 
+        let credentials = auth::discover_credentials();
+
         RuntimeStatus {
             runtime,
             runtime_version,
@@ -489,6 +518,7 @@ impl RuntimeStatus {
             config_exists,
             mcp_config_path,
             mcp_config_exists,
+            credentials,
         }
     }
 
@@ -526,6 +556,27 @@ impl RuntimeStatus {
             println!("Running ccs containers:");
             for name in &self.running_containers {
                 println!("  - {}", name);
+            }
+        }
+
+        println!();
+
+        // Credentials
+        match self.credentials.source {
+            CredentialSource::None => {
+                println!("Claude credentials: NOT FOUND");
+                println!("  Run 'claude login' on host, or set ANTHROPIC_API_KEY");
+            }
+            ref source => {
+                println!(
+                    "Claude credentials: {} ({})",
+                    source,
+                    if self.credentials.api_key.is_some() {
+                        "API key"
+                    } else {
+                        "OAuth token"
+                    }
+                );
             }
         }
 
