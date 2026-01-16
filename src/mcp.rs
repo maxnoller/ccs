@@ -87,7 +87,7 @@ pub fn generate_mcp_config(config: &Config) -> Result<Option<PathBuf>, McpError>
     }
 
     // Write to temporary file
-    let temp_file = tempfile::Builder::new()
+    let mut temp_file = tempfile::Builder::new()
         .prefix("ccs-mcp-")
         .suffix(".json")
         .tempfile()?;
