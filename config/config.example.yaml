@@ -1,0 +1,44 @@
+# Claude Code Sandbox Configuration
+# Copy this file to ~/.config/ccs/config.yaml and customize
+
+# Docker configuration
+docker:
+  # Docker image name (build with: ccs --build)
+  image: ccs:latest
+
+  # Path to Dockerfile (optional, defaults to ./docker/Dockerfile)
+  # dockerfile_path: /path/to/custom/Dockerfile
+
+  # Additional volumes to mount
+  # Format: host_path: container_path
+  extra_volumes: {}
+    # Example:
+    # ~/.ssh: /home/claude/.ssh:ro
+    # ~/.gitconfig: /home/claude/.gitconfig:ro
+
+  # Additional environment variables
+  extra_env: {}
+    # Example:
+    # EDITOR: vim
+    # TERM: xterm-256color
+
+  # Container user (default: claude)
+  user: claude
+
+  # Working directory in container
+  workdir: /workspace
+
+# Worktree configuration
+worktree:
+  # Base path for creating new worktrees
+  # Supports {repo_name} placeholder
+  # Can be relative (to repo parent) or absolute
+  base_path: "../{repo_name}-worktrees"
+
+  # Alternative: absolute path with placeholder
+  # base_path: "~/worktrees/{repo_name}"
+
+# Secrets backend configuration
+secrets:
+  # Backend: "1password", "bitwarden", "pass", or "env"
+  backend: env

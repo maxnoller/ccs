@@ -1,0 +1,23 @@
+[package]
+name = "ccs"
+version = "0.1.0"
+edition = "2021"
+description = "Claude Code Sandbox - Run Claude Code safely in Docker containers"
+authors = ["Max"]
+license = "MIT"
+
+[[bin]]
+name = "ccs"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+git2 = "0.19"
+which = "7"
+dirs = "6"
+thiserror = "2"
+tempfile = "3"
+anyhow = "1"
