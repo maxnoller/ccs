@@ -27,6 +27,26 @@ struct Cli {
     #[arg(short = 'b', long = "branch", requires = "new_worktree")]
     create_branch: bool,
 
+    /// Run container in detached mode (background)
+    #[arg(short = 'd', long)]
+    detach: bool,
+
+    /// List running ccs sessions
+    #[arg(long)]
+    list: bool,
+
+    /// Attach to a running ccs session
+    #[arg(long, value_name = "CONTAINER")]
+    attach: Option<String>,
+
+    /// Show logs from a running/stopped ccs session
+    #[arg(long, value_name = "CONTAINER")]
+    logs: Option<String>,
+
+    /// Stop a running ccs session
+    #[arg(long, value_name = "CONTAINER")]
+    stop: Option<String>,
+
     /// Rebuild the container image before starting
     #[arg(long)]
     build: bool,
@@ -62,6 +82,26 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // Handle --list flag: list running sessions
+    if cli.list {
+        return docker::list_sessions();
+    }
+
+    // Handle --attach flag: attach to running session
+    if let Some(container) = &cli.attach {
+        return docker::attach_session(container);
+    }
+
+    // Handle --logs flag: show logs from session
+    if let Some(container) = &cli.logs {
+        return docker::show_logs(container);
+    }
+
+    // Handle --stop flag: stop a running session
+    if let Some(container) = &cli.stop {
+        return docker::stop_session(container);
+    }
+
     // Handle --build flag: rebuild container image
     if cli.build {
         return DockerRunner::build_image(&config);
@@ -92,7 +132,7 @@ fn main() -> anyhow::Result<()> {
 
     // Run the Docker container
     let runner = DockerRunner::new(&config, &git_context, mcp_config_path)?;
-    runner.run(&cli.claude_args)
+    runner.run(&cli.claude_args, cli.detach)
 }
 
 fn open_config_in_editor() -> anyhow::Result<()> {

@@ -137,14 +137,27 @@ impl DockerRunner {
     }
 
     /// Run the container with Claude Code
-    pub fn run(&self, extra_args: &[String]) -> anyhow::Result<()> {
+    pub fn run(&self, extra_args: &[String], detach: bool) -> anyhow::Result<()> {
         let mut cmd = Command::new(self.runtime.command());
 
         cmd.arg("run")
-            .arg("--rm")
-            .arg("-it")
             .arg("--name")
             .arg(&self.container_name);
+
+        if detach {
+            // Detached mode - run in background, don't remove on exit
+            cmd.arg("-d");
+        } else {
+            // Interactive mode - remove on exit
+            cmd.arg("--rm");
+            // Only use -it flags when we have a TTY
+            if atty::is(atty::Stream::Stdin) {
+                cmd.arg("-it");
+            } else {
+                // Non-interactive mode - still need -i for stdin
+                cmd.arg("-i");
+            }
+        }
 
         // Add resource limits
         if let Some(ref mem) = self.config.docker.memory_limit {
@@ -176,12 +189,12 @@ impl DockerRunner {
                 .arg(format!("{}:{}", host_path.display(), container_path));
         }
 
-        // Mount Claude auth directory (read-only)
+        // Mount Claude auth directory (read-write, Claude Code needs to write logs/state)
         if let Some(home) = dirs::home_dir() {
             let claude_dir = home.join(".claude");
             if claude_dir.exists() {
                 cmd.arg("-v").arg(format!(
-                    "{}:/home/{}/.claude:ro",
+                    "{}:/home/{}/.claude",
                     claude_dir.display(),
                     self.config.docker.user
                 ));
@@ -225,7 +238,11 @@ impl DockerRunner {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
 
-        println!("Starting Claude Code sandbox...");
+        if detach {
+            println!("Starting Claude Code sandbox (detached)...");
+        } else {
+            println!("Starting Claude Code sandbox...");
+        }
         println!("Runtime: {}", self.runtime.name());
         println!("Container: {}", self.container_name);
         println!("Workspace: {}", self.git_context.workspace_path.display());
@@ -243,18 +260,179 @@ impl DockerRunner {
         }
         println!();
 
-        let status = cmd.status()?;
-
-        if !status.success() {
-            if let Some(code) = status.code() {
-                std::process::exit(code);
+        if detach {
+            let output = cmd.output()?;
+            if output.status.success() {
+                let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                println!("Container started: {}", self.container_name);
+                println!("Container ID: {}", &container_id[..12.min(container_id.len())]);
+                println!();
+                println!("Commands:");
+                println!("  ccs --list              # List running sessions");
+                println!("  ccs --attach {}   # Attach to session", self.container_name);
+                println!("  ccs --logs {}     # View logs", self.container_name);
+                println!("  ccs --stop {}     # Stop session", self.container_name);
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(DockerError::CommandFailed(stderr.to_string()).into());
             }
-            return Err(
-                DockerError::CommandFailed("Container exited with error".to_string()).into(),
-            );
+        } else {
+            let status = cmd.status()?;
+            if !status.success() {
+                if let Some(code) = status.code() {
+                    std::process::exit(code);
+                }
+                return Err(
+                    DockerError::CommandFailed("Container exited with error".to_string()).into(),
+                );
+            }
         }
 
         Ok(())
+    }
+}
+
+/// List all running ccs sessions
+pub fn list_sessions() -> anyhow::Result<()> {
+    let runtime = ContainerRuntime::detect()?;
+
+    let output = Command::new(runtime.command())
+        .args(["ps", "-a", "--filter", "name=ccs-", "--format", "table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}"])
+        .output()?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.trim().is_empty() || stdout.lines().count() <= 1 {
+            println!("No ccs sessions found.");
+        } else {
+            println!("{}", stdout);
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(DockerError::CommandFailed(stderr.to_string()).into());
+    }
+
+    Ok(())
+}
+
+/// Attach to a running ccs session
+pub fn attach_session(container: &str) -> anyhow::Result<()> {
+    let runtime = ContainerRuntime::detect()?;
+
+    // Resolve partial container name
+    let container_name = resolve_container_name(runtime, container)?;
+
+    println!("Attaching to {}...", container_name);
+    println!("(Use Ctrl+P, Ctrl+Q to detach without stopping)\n");
+
+    let status = Command::new(runtime.command())
+        .args(["attach", &container_name])
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
+
+    if !status.success() {
+        if let Some(code) = status.code() {
+            std::process::exit(code);
+        }
+    }
+
+    Ok(())
+}
+
+/// Show logs from a ccs session
+pub fn show_logs(container: &str) -> anyhow::Result<()> {
+    let runtime = ContainerRuntime::detect()?;
+
+    // Resolve partial container name
+    let container_name = resolve_container_name(runtime, container)?;
+
+    let status = Command::new(runtime.command())
+        .args(["logs", "-f", &container_name])
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
+
+    if !status.success() {
+        if let Some(code) = status.code() {
+            std::process::exit(code);
+        }
+    }
+
+    Ok(())
+}
+
+/// Stop a running ccs session
+pub fn stop_session(container: &str) -> anyhow::Result<()> {
+    let runtime = ContainerRuntime::detect()?;
+
+    // Resolve partial container name
+    let container_name = resolve_container_name(runtime, container)?;
+
+    println!("Stopping {}...", container_name);
+
+    let status = Command::new(runtime.command())
+        .args(["stop", &container_name])
+        .status()?;
+
+    if status.success() {
+        println!("Stopped.");
+
+        // Also remove the container
+        let _ = Command::new(runtime.command())
+            .args(["rm", &container_name])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    } else {
+        return Err(DockerError::CommandFailed("Failed to stop container".to_string()).into());
+    }
+
+    Ok(())
+}
+
+/// Resolve a partial container name to full name
+fn resolve_container_name(runtime: ContainerRuntime, partial: &str) -> anyhow::Result<String> {
+    // If it already starts with ccs-, use as-is
+    let search_name = if partial.starts_with("ccs-") {
+        partial.to_string()
+    } else {
+        format!("ccs-{}", partial)
+    };
+
+    // Try to find matching container
+    let output = Command::new(runtime.command())
+        .args(["ps", "-a", "--filter", &format!("name={}", search_name), "--format", "{{.Names}}"])
+        .output()?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let names: Vec<String> = stdout
+            .lines()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.trim().to_string())
+            .collect();
+
+        match names.len() {
+            0 => Err(anyhow::anyhow!("No container found matching '{}'", partial)),
+            1 => Ok(names[0].clone()),
+            _ => {
+                // Check for exact match
+                if let Some(exact) = names.iter().find(|n| n.as_str() == search_name) {
+                    Ok(exact.clone())
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Multiple containers match '{}': {}",
+                        partial,
+                        names.join(", ")
+                    ))
+                }
+            }
+        }
+    } else {
+        Ok(search_name)
     }
 }
 
