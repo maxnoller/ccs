@@ -64,10 +64,7 @@ fn resolve_secret_value(value: &str, backend: &str) -> Result<String, SecretsErr
 fn resolve_1password_secret(reference: &str) -> Result<String, SecretsError> {
     which::which("op").map_err(|_| SecretsError::OnePasswordNotFound)?;
 
-    let output = Command::new("op")
-        .arg("read")
-        .arg(reference)
-        .output()?;
+    let output = Command::new("op").arg("read").arg(reference).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -105,10 +102,8 @@ fn resolve_bitwarden_secret(reference: &str) -> Result<String, SecretsError> {
     }
 
     // Parse JSON output to get the value
-    let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).map_err(|e| {
-            SecretsError::ResolutionFailed(reference.to_string(), e.to_string())
-        })?;
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| SecretsError::ResolutionFailed(reference.to_string(), e.to_string()))?;
 
     json.get("value")
         .and_then(|v| v.as_str())
@@ -129,10 +124,7 @@ fn resolve_pass_secret(reference: &str) -> Result<String, SecretsError> {
     // Extract the path from pass://...
     let path = reference.strip_prefix("pass://").unwrap_or(reference);
 
-    let output = Command::new("pass")
-        .arg("show")
-        .arg(path)
-        .output()?;
+    let output = Command::new("pass").arg("show").arg(path).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

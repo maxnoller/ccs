@@ -15,14 +15,38 @@ A Docker-based sandbox for running [Claude Code](https://github.com/anthropics/c
 
 ## Installation
 
-```bash
-# Clone and build
-git clone <repo-url> && cd ccs
-cargo install --path .
+### Quick Install (Linux/macOS)
 
-# Build the Docker image
+```bash
+curl -fsSL https://raw.githubusercontent.com/maxnoller/ccs/main/install.sh | bash
+```
+
+This downloads a pre-built binary or builds from source if needed. Installs to `~/.local/bin/` by default.
+
+### Using Cargo
+
+```bash
+cargo install --git https://github.com/maxnoller/ccs
+```
+
+### From Source
+
+```bash
+git clone https://github.com/maxnoller/ccs && cd ccs
+cargo install --path .
+```
+
+### Build the Container Image
+
+After installing ccs, build the Docker/Podman image:
+
+```bash
 ccs --build
 ```
+
+### Update
+
+Re-run the install script or cargo command to update to the latest version.
 
 ## Quick Start
 

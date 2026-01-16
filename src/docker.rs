@@ -156,7 +156,10 @@ impl DockerRunner {
 
         // Load .env file from project if configured and exists
         let env_file_loaded = if self.config.docker.load_env_file {
-            let env_path = self.git_context.workspace_path.join(&self.config.docker.env_file_path);
+            let env_path = self
+                .git_context
+                .workspace_path
+                .join(&self.config.docker.env_file_path);
             if env_path.exists() {
                 cmd.arg("--env-file").arg(&env_path);
                 true
@@ -169,11 +172,8 @@ impl DockerRunner {
 
         // Add volume mounts for git context
         for (host_path, container_path) in self.git_context.docker_mounts() {
-            cmd.arg("-v").arg(format!(
-                "{}:{}",
-                host_path.display(),
-                container_path
-            ));
+            cmd.arg("-v")
+                .arg(format!("{}:{}", host_path.display(), container_path));
         }
 
         // Mount Claude auth directory (read-only)
@@ -200,7 +200,8 @@ impl DockerRunner {
         // Add extra volumes from config
         for (host, container) in &self.config.docker.extra_volumes {
             let expanded_host = shellexpand::tilde(host);
-            cmd.arg("-v").arg(format!("{}:{}", expanded_host, container));
+            cmd.arg("-v")
+                .arg(format!("{}:{}", expanded_host, container));
         }
 
         // Add environment variables from config
@@ -248,7 +249,9 @@ impl DockerRunner {
             if let Some(code) = status.code() {
                 std::process::exit(code);
             }
-            return Err(DockerError::CommandFailed("Container exited with error".to_string()).into());
+            return Err(
+                DockerError::CommandFailed("Container exited with error".to_string()).into(),
+            );
         }
 
         Ok(())
@@ -284,19 +287,20 @@ impl RuntimeStatus {
     /// Check the status of the container runtime environment
     pub fn check(config: &Config) -> Self {
         let runtime = ContainerRuntime::detect().ok();
-        let runtime_version = runtime.and_then(|r| get_runtime_version(r));
+        let runtime_version = runtime.and_then(get_runtime_version);
         let image_exists = runtime
             .map(|r| check_image_exists(r, &config.docker.image))
             .unwrap_or(false);
-        let running_containers = runtime
-            .map(|r| list_ccs_containers(r))
-            .unwrap_or_default();
+        let running_containers = runtime.map(list_ccs_containers).unwrap_or_default();
 
         let config_path = Config::config_path().ok();
         let config_exists = config_path.as_ref().map(|p| p.exists()).unwrap_or(false);
 
         let mcp_config_path = Config::mcp_servers_path().ok();
-        let mcp_config_exists = mcp_config_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+        let mcp_config_exists = mcp_config_path
+            .as_ref()
+            .map(|p| p.exists())
+            .unwrap_or(false);
 
         RuntimeStatus {
             runtime,
@@ -415,23 +419,15 @@ fn check_image_exists(runtime: ContainerRuntime, image: &str) -> bool {
 
 fn list_ccs_containers(runtime: ContainerRuntime) -> Vec<String> {
     let output = Command::new(runtime.command())
-        .args([
-            "ps",
-            "--filter",
-            "name=ccs-",
-            "--format",
-            "{{.Names}}",
-        ])
+        .args(["ps", "--filter", "name=ccs-", "--format", "{{.Names}}"])
         .output();
 
     match output {
-        Ok(Output { status, stdout, .. }) if status.success() => {
-            String::from_utf8_lossy(&stdout)
-                .lines()
-                .map(|s| s.to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        }
+        Ok(Output { status, stdout, .. }) if status.success() => String::from_utf8_lossy(&stdout)
+            .lines()
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
         _ => vec![],
     }
 }

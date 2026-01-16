@@ -19,7 +19,7 @@ pub enum ConfigError {
 }
 
 /// Main configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// Docker-related settings
@@ -82,17 +82,6 @@ pub struct WorktreeConfig {
 pub struct SecretsConfig {
     /// Secrets backend: "1password", "bitwarden", "pass", or "env"
     pub backend: String,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            docker: DockerConfig::default(),
-            worktree: WorktreeConfig::default(),
-            secrets: SecretsConfig::default(),
-            mcp_config_path: None,
-        }
-    }
 }
 
 impl Default for DockerConfig {
@@ -167,9 +156,9 @@ impl Config {
 
         if path.is_absolute() {
             // Handle ~ expansion for absolute paths
-            if path_str.starts_with("~/") {
+            if let Some(stripped) = path_str.strip_prefix("~/") {
                 if let Some(home) = dirs::home_dir() {
-                    return home.join(&path_str[2..]);
+                    return home.join(stripped);
                 }
             }
             path

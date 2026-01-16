@@ -123,6 +123,3 @@ fn open_config_in_editor() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-// Use anyhow for convenient error handling in main
-use anyhow;

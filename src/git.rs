@@ -85,7 +85,11 @@ impl GitContext {
         // For worktrees, the path is like: /path/to/main/.git/worktrees/<name>
         // We want: /path/to/main/.git
         if let Some(worktrees_parent) = git_path.parent() {
-            if worktrees_parent.file_name().map(|n| n == "worktrees").unwrap_or(false) {
+            if worktrees_parent
+                .file_name()
+                .map(|n| n == "worktrees")
+                .unwrap_or(false)
+            {
                 return worktrees_parent.parent().map(|p| p.to_path_buf());
             }
         }
