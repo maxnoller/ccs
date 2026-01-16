@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -153,7 +154,7 @@ impl DockerRunner {
             // Interactive mode - remove on exit
             cmd.arg("--rm");
             // Only use -it flags when we have a TTY
-            if atty::is(atty::Stream::Stdin) {
+            if std::io::stdin().is_terminal() {
                 cmd.arg("-it");
             } else {
                 // Non-interactive mode - still need -i for stdin
