@@ -70,7 +70,7 @@ pub fn generate_mcp_config(config: &Config) -> Result<Option<PathBuf>, McpError>
 
         // Combine implicit args with explicit args
         let mut all_args = implicit_args;
-        all_args.extend(server.args.clone());
+        all_args.extend(server.args);
 
         // Resolve secrets in environment variables
         let resolved_env = resolve_secrets(&server.env, &config.secrets.backend)?;
