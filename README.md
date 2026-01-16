@@ -13,6 +13,14 @@ A Docker-based sandbox for running [Claude Code](https://github.com/anthropics/c
 - **Ephemeral sessions**: Fresh container each run, no state leakage
 - **Authentication sharing**: Mounts host `~/.claude/` for seamless auth
 
+## Supported Platforms
+
+- Linux x86_64
+- Linux aarch64
+- macOS aarch64 (Apple Silicon)
+
+Intel Mac users: the installer will build from source automatically.
+
 ## Installation
 
 ### Quick Install (Linux/macOS)
