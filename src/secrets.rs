@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::process::Command;
 use thiserror::Error;
@@ -26,14 +27,12 @@ pub fn resolve_secrets(
     env: &HashMap<String, String>,
     backend: &str,
 ) -> Result<HashMap<String, String>, SecretsError> {
-    let mut resolved = HashMap::new();
-
-    for (key, value) in env {
-        let resolved_value = resolve_secret_value(value, backend)?;
-        resolved.insert(key.clone(), resolved_value);
-    }
-
-    Ok(resolved)
+    env.par_iter()
+        .map(|(key, value)| {
+            let resolved_value = resolve_secret_value(value, backend)?;
+            Ok((key.clone(), resolved_value))
+        })
+        .collect()
 }
 
 /// Resolve a single secret value
@@ -187,4 +186,5 @@ mod tests {
         assert_eq!(resolved.get("SECRET").unwrap(), "secret_value");
         std::env::remove_var("TEST_SECRET_CCS_2");
     }
+
 }
