@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -92,7 +93,7 @@ pub fn generate_mcp_config(config: &Config) -> Result<Option<PathBuf>, McpError>
         .tempfile()?;
 
     let config_json = serde_json::to_string_pretty(&claude_config)?;
-    std::fs::write(temp_file.path(), &config_json)?;
+    temp_file.write_all(config_json.as_bytes())?;
 
     // Keep the file (don't delete on drop)
     let path = temp_file.into_temp_path().keep()?;
