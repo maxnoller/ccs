@@ -14,8 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Claude Code globally
 RUN npm install -g @anthropic-ai/claude-code
 
-# Create non-root user for security
-RUN useradd -m -s /bin/bash -u 1000 claude
+# Use existing node user (UID 1000) and rename to claude for clarity
+RUN usermod -l claude -d /home/claude -m node \
+    && groupmod -n claude node
 
 # Create necessary directories with correct permissions
 RUN mkdir -p /home/claude/.claude /workspace \
