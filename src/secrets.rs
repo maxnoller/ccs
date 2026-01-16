@@ -186,5 +186,4 @@ mod tests {
         assert_eq!(resolved.get("SECRET").unwrap(), "secret_value");
         std::env::remove_var("TEST_SECRET_CCS_2");
     }
-
 }
