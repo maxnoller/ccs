@@ -1,0 +1,47 @@
+# Claude Code Sandbox Configuration
+# Copy this file to ~/.config/ccs/config.toml and customize
+
+[docker]
+# Container image name (build with: ccs --build)
+image = "ccs:latest"
+
+# Path to Dockerfile (optional, defaults to ./docker/Dockerfile)
+# dockerfile_path = "/path/to/custom/Dockerfile"
+
+# Container user (default: claude)
+user = "claude"
+
+# Working directory in container
+workdir = "/workspace"
+
+# Resource limits (optional - prevents runaway processes)
+# memory_limit = "4g"    # e.g., "4g", "512m"
+# cpu_limit = 2.0        # number of CPU cores
+
+# Load .env file from project directory (default: true)
+load_env_file = true
+env_file_path = ".env"
+
+# Additional volumes to mount
+# Format: { "host_path" = "container_path" }
+[docker.extra_volumes]
+# "~/.ssh" = "/home/claude/.ssh:ro"
+# "~/.gitconfig" = "/home/claude/.gitconfig:ro"
+
+# Additional environment variables
+[docker.extra_env]
+# EDITOR = "vim"
+# TERM = "xterm-256color"
+
+[worktree]
+# Base path for creating new worktrees
+# Supports {repo_name} placeholder
+# Can be relative (to repo parent) or absolute
+base_path = "../{repo_name}-worktrees"
+
+# Alternative: absolute path with placeholder
+# base_path = "~/worktrees/{repo_name}"
+
+[secrets]
+# Backend: "1password", "bitwarden", "pass", or "env"
+backend = "env"

@@ -4,7 +4,10 @@ A Docker-based sandbox for running [Claude Code](https://github.com/anthropics/c
 
 ## Features
 
-- **Container isolation**: Run Claude Code with full permissions safely in Docker
+- **Container isolation**: Run Claude Code with full permissions safely in Docker or Podman
+- **Podman support**: Auto-detects Podman as an alternative to Docker (rootless by default)
+- **Resource limits**: Configure memory and CPU limits to prevent runaway processes
+- **Project .env files**: Automatically loads `.env` from project directory into container
 - **Git worktree support**: Automatic detection and creation of git worktrees
 - **MCP servers**: Configure MCP servers with secret injection from password managers
 - **Ephemeral sessions**: Fresh container each run, no state leakage
@@ -24,6 +27,9 @@ ccs --build
 ## Quick Start
 
 ```bash
+# Check setup status
+ccs --status
+
 # Run in current directory
 cd ~/myproject
 ccs
@@ -43,12 +49,12 @@ ccs -- --verbose
 
 ## Configuration
 
-### Main Config: `~/.config/ccs/config.yaml`
+### Main Config: `~/.config/ccs/config.toml`
 
 ```bash
 # Create from example
 mkdir -p ~/.config/ccs
-cp config/config.example.yaml ~/.config/ccs/config.yaml
+cp config/config.example.toml ~/.config/ccs/config.toml
 
 # Or use the built-in editor command
 ccs --config
@@ -56,40 +62,63 @@ ccs --config
 
 Key settings:
 
-```yaml
-docker:
-  image: ccs:latest          # Docker image name
-  extra_volumes: {}          # Additional mounts
-  extra_env: {}              # Additional env vars
+```toml
+[docker]
+image = "ccs:latest"         # Container image name
+memory_limit = "4g"          # Memory limit (optional)
+cpu_limit = 2.0              # CPU cores limit (optional)
+load_env_file = true         # Load .env from project (default: true)
+env_file_path = ".env"       # Path to .env file
 
-worktree:
-  base_path: "../{repo_name}-worktrees"  # Where to create worktrees
+[docker.extra_volumes]
+# "~/.ssh" = "/home/claude/.ssh:ro"
 
-secrets:
-  backend: env               # 1password, bitwarden, pass, or env
+[docker.extra_env]
+# EDITOR = "vim"
+
+[worktree]
+base_path = "../{repo_name}-worktrees"
+
+[secrets]
+backend = "env"              # 1password, bitwarden, pass, or env
 ```
 
-### MCP Servers: `~/.config/ccs/mcp.yaml`
+### Project .env Files
+
+By default, ccs loads `.env` files from your project directory into the container. This allows Claude to start your application with the correct environment variables:
 
 ```bash
-cp config/mcp-servers.example.yaml ~/.config/ccs/mcp.yaml
+# Your project's .env file is automatically loaded
+cd ~/myproject
+cat .env
+# DATABASE_URL=postgres://localhost/mydb
+# API_KEY=secret123
+
+ccs  # .env is passed to the container via --env-file
+```
+
+To disable: set `load_env_file = false` in config.
+
+### MCP Servers: `~/.config/ccs/mcp.toml`
+
+```bash
+cp config/mcp-servers.example.toml ~/.config/ccs/mcp.toml
 ```
 
 Configure MCP servers with secret references:
 
-```yaml
-servers:
-  github:
-    command: npx -y @modelcontextprotocol/server-github
-    env:
-      # 1Password
-      GITHUB_TOKEN: "op://Development/GitHub Token/token"
-      # Or Bitwarden
-      # GITHUB_TOKEN: "bws://secret-id"
-      # Or pass
-      # GITHUB_TOKEN: "pass://github/token"
-      # Or environment variable
-      # GITHUB_TOKEN: "env://GITHUB_TOKEN"
+```toml
+[servers.github]
+command = "npx -y @modelcontextprotocol/server-github"
+[servers.github.env]
+# 1Password
+GITHUB_TOKEN = "op://Development/GitHub Token/token"
+# Or Bitwarden
+# GITHUB_TOKEN = "bws://secret-id"
+# Or pass
+# GITHUB_TOKEN = "pass://github/token"
+# Or environment variable
+# GITHUB_TOKEN = "env://GITHUB_TOKEN"
 ```
 
 ## Git Worktrees
@@ -107,24 +136,24 @@ cd ~/projects/myrepo-worktrees/feature-x
 ccs
 ```
 
-Configure worktree location in `config.yaml`:
+Configure worktree location in `config.toml`:
 
-```yaml
-worktree:
-  # Relative to repo parent (default)
-  base_path: "../{repo_name}-worktrees"
+```toml
+[worktree]
+# Relative to repo parent (default)
+base_path = "../{repo_name}-worktrees"
 
-  # Or absolute path
-  base_path: "~/worktrees/{repo_name}"
+# Or absolute path
+# base_path = "~/worktrees/{repo_name}"
 ```
 
 ## Secrets Backends
 
 ### 1Password
 
-```yaml
-secrets:
-  backend: 1password
+```toml
+[secrets]
+backend = "1password"
 ```
 
 Reference format: `op://Vault/Item/Field`
@@ -133,9 +162,9 @@ Requires: [1Password CLI](https://1password.com/downloads/command-line/)
 
 ### Bitwarden Secrets Manager
 
-```yaml
-secrets:
-  backend: bitwarden
+```toml
+[secrets]
+backend = "bitwarden"
 ```
 
 Reference format: `bws://secret-id`
@@ -144,9 +173,9 @@ Requires: [Bitwarden Secrets CLI](https://bitwarden.com/help/secrets-manager-cli
 
 ### pass (Password Store)
 
-```yaml
-secrets:
-  backend: pass
+```toml
+[secrets]
+backend = "pass"
 ```
 
 Reference format: `pass://path/to/secret`
@@ -155,9 +184,9 @@ Requires: [pass](https://www.passwordstore.org/)
 
 ### Environment Variables
 
-```yaml
-secrets:
-  backend: env
+```toml
+[secrets]
+backend = "env"
 ```
 
 Reference format: `env://VARIABLE_NAME`
@@ -168,6 +197,7 @@ Reference format: `env://VARIABLE_NAME`
 |----------|------------|
 | Filesystem | Only `/workspace` writable; host system isolated |
 | Network | Container has network access (for Claude API + MCP) |
+| Resources | Optional memory and CPU limits prevent runaway processes |
 | Secrets | Injected at runtime; never persisted in image |
 | Credentials | `~/.claude/` mounted read-only |
 | Ephemerality | Fresh container each run |
@@ -183,8 +213,9 @@ Arguments:
 Options:
   --new <BRANCH>   Create worktree and start sandbox
   -b, --branch     Create new branch with --new
-  --build          Rebuild Docker image
+  --build          Rebuild container image
   --config         Open config in $EDITOR
+  --status         Show runtime, image, and config status
   -h, --help       Print help
   -V, --version    Print version
 ```
@@ -197,15 +228,15 @@ ccs/
 ├── src/
 │   ├── main.rs             # CLI entry point
 │   ├── config.rs           # Configuration
-│   ├── docker.rs           # Docker operations
+│   ├── docker.rs           # Container operations
 │   ├── git.rs              # Git/worktree handling
 │   ├── mcp.rs              # MCP config generation
 │   └── secrets.rs          # Secret resolution
 ├── docker/
 │   └── Dockerfile          # Container image
 ├── config/
-│   ├── config.example.yaml
-│   └── mcp-servers.example.yaml
+│   ├── config.example.toml
+│   └── mcp-servers.example.toml
 └── README.md
 ```
 

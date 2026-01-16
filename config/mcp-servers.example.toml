@@ -1,0 +1,46 @@
+# MCP Servers Configuration for Claude Code Sandbox
+# Copy this file to ~/.config/ccs/mcp.toml and customize
+#
+# Secret reference formats:
+#   - 1Password: op://Vault/Item/Field
+#   - Bitwarden: bws://secret-id
+#   - pass:      pass://path/to/secret
+#   - Env var:   env://VARIABLE_NAME
+#   - Plain:     just the value (not recommended for secrets)
+
+[servers.github]
+# GitHub MCP Server - provides repo management, issues, PRs, etc.
+command = "npx -y @modelcontextprotocol/server-github"
+[servers.github.env]
+# Using 1Password reference:
+GITHUB_TOKEN = "op://Development/GitHub Token/token"
+# Or environment variable:
+# GITHUB_TOKEN = "env://GITHUB_TOKEN"
+
+# [servers.slack]
+# # Slack MCP Server - provides channel messaging, search, etc.
+# command = "npx -y @anthropic/mcp-server-slack"
+# [servers.slack.env]
+# SLACK_BOT_TOKEN = "op://Work/Slack Bot/token"
+# SLACK_TEAM_ID = "T12345678"
+
+# [servers.postgres]
+# # PostgreSQL MCP Server - provides database queries and schema inspection
+# command = "npx -y @anthropic/mcp-server-postgres"
+# [servers.postgres.env]
+# DATABASE_URL = "op://Development/Local Postgres/connection_string"
+
+# [servers.filesystem]
+# # Filesystem MCP Server - provides file operations outside the workspace
+# command = "npx -y @modelcontextprotocol/server-filesystem"
+# args = ["/allowed/path1", "/allowed/path2"]
+
+# [servers.memory]
+# # Memory MCP Server - provides persistent memory across sessions
+# command = "npx -y @modelcontextprotocol/server-memory"
+
+# [servers.brave-search]
+# # Brave Search MCP Server - provides web search capabilities
+# command = "npx -y @modelcontextprotocol/server-brave-search"
+# [servers.brave-search.env]
+# BRAVE_API_KEY = "op://Development/Brave API/key"

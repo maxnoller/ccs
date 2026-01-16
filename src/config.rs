@@ -12,7 +12,10 @@ pub enum ConfigError {
     ReadError(#[from] std::io::Error),
 
     #[error("Failed to parse config file: {0}")]
-    ParseError(#[from] serde_yaml::Error),
+    ParseError(#[from] toml::de::Error),
+
+    #[error("Failed to serialize config: {0}")]
+    SerializeError(#[from] toml::ser::Error),
 }
 
 /// Main configuration structure
@@ -52,6 +55,18 @@ pub struct DockerConfig {
 
     /// Working directory in container
     pub workdir: String,
+
+    /// Memory limit (e.g., "4g", "512m")
+    pub memory_limit: Option<String>,
+
+    /// CPU limit (e.g., 2.0 for 2 cores)
+    pub cpu_limit: Option<f32>,
+
+    /// Load .env file from project directory into container
+    pub load_env_file: bool,
+
+    /// Custom .env file path (relative to project, defaults to ".env")
+    pub env_file_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +104,10 @@ impl Default for DockerConfig {
             extra_env: HashMap::new(),
             user: "claude".to_string(),
             workdir: "/workspace".to_string(),
+            memory_limit: None,
+            cpu_limit: None,
+            load_env_file: true,
+            env_file_path: ".env".to_string(),
         }
     }
 }
@@ -113,13 +132,13 @@ impl Config {
     /// Returns the path to the config file
     pub fn config_path() -> Result<PathBuf, ConfigError> {
         let config_dir = dirs::config_dir().ok_or(ConfigError::NoConfigDir)?;
-        Ok(config_dir.join("ccs").join("config.yaml"))
+        Ok(config_dir.join("ccs").join("config.toml"))
     }
 
     /// Returns the path to the MCP servers config file
     pub fn mcp_servers_path() -> Result<PathBuf, ConfigError> {
         let config_dir = dirs::config_dir().ok_or(ConfigError::NoConfigDir)?;
-        Ok(config_dir.join("ccs").join("mcp.yaml"))
+        Ok(config_dir.join("ccs").join("mcp.toml"))
     }
 
     /// Load configuration from file, falling back to defaults
@@ -128,19 +147,21 @@ impl Config {
 
         if config_path.exists() {
             let contents = std::fs::read_to_string(&config_path)?;
-            let config: Config = serde_yaml::from_str(&contents)?;
+            let config: Config = toml::from_str(&contents)?;
             Ok(config)
         } else {
             Ok(Config::default())
         }
     }
 
+    /// Serialize config to TOML string
+    pub fn to_toml(&self) -> Result<String, ConfigError> {
+        Ok(toml::to_string_pretty(self)?)
+    }
+
     /// Resolve worktree base path with placeholders
     pub fn resolve_worktree_path(&self, repo_name: &str, repo_parent: &std::path::Path) -> PathBuf {
-        let path_str = self
-            .worktree
-            .base_path
-            .replace("{repo_name}", repo_name);
+        let path_str = self.worktree.base_path.replace("{repo_name}", repo_name);
 
         let path = PathBuf::from(&path_str);
 
@@ -183,7 +204,7 @@ impl McpServersConfig {
 
         if mcp_path.exists() {
             let contents = std::fs::read_to_string(&mcp_path)?;
-            let config: McpServersConfig = serde_yaml::from_str(&contents)?;
+            let config: McpServersConfig = toml::from_str(&contents)?;
             Ok(Some(config))
         } else {
             Ok(None)
@@ -200,6 +221,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.docker.image, "ccs:latest");
         assert_eq!(config.secrets.backend, "env");
+        assert!(config.docker.load_env_file);
     }
 
     #[test]
@@ -212,5 +234,13 @@ mod tests {
             resolved,
             PathBuf::from("/home/user/projects/../myrepo-worktrees")
         );
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config::default();
+        let toml_str = config.to_toml().unwrap();
+        assert!(toml_str.contains("[docker]"));
+        assert!(toml_str.contains("image = \"ccs:latest\""));
     }
 }

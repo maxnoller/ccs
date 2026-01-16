@@ -8,7 +8,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use config::Config;
-use docker::DockerRunner;
+use docker::{DockerRunner, RuntimeStatus};
 use git::GitContext;
 
 /// Claude Code Sandbox - Run Claude Code safely in Docker containers
@@ -35,6 +35,10 @@ struct Cli {
     #[arg(long)]
     config: bool,
 
+    /// Show status of container runtime, image, and config
+    #[arg(long)]
+    status: bool,
+
     /// Extra arguments to pass to Claude Code
     #[arg(last = true)]
     claude_args: Vec<String>,
@@ -50,6 +54,13 @@ fn main() -> anyhow::Result<()> {
 
     // Load configuration
     let config = Config::load()?;
+
+    // Handle --status flag: show runtime status
+    if cli.status {
+        let status = RuntimeStatus::check(&config);
+        status.print(&config);
+        return Ok(());
+    }
 
     // Handle --build flag: rebuild container image
     if cli.build {
@@ -95,8 +106,8 @@ fn open_config_in_editor() -> anyhow::Result<()> {
     // Create default config if it doesn't exist
     if !config_path.exists() {
         let default_config = Config::default();
-        let yaml = serde_yaml::to_string(&default_config)?;
-        std::fs::write(&config_path, yaml)?;
+        let toml_str = default_config.to_toml()?;
+        std::fs::write(&config_path, toml_str)?;
         println!("Created default config at: {}", config_path.display());
     }
 

@@ -11,9 +11,6 @@ pub enum McpError {
     #[error("Failed to read MCP config: {0}")]
     ReadError(#[from] std::io::Error),
 
-    #[error("Failed to parse MCP config: {0}")]
-    ParseError(#[from] serde_yaml::Error),
-
     #[error("Failed to serialize MCP config: {0}")]
     SerializeError(#[from] serde_json::Error),
 
