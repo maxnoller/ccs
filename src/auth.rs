@@ -247,6 +247,7 @@ mod tests {
             "ANTHROPIC_API_KEY env var"
         );
         assert_eq!(format!("{}", CredentialSource::ClaudeDir), "~/.claude/");
+        #[cfg(target_os = "macos")]
         assert_eq!(
             format!("{}", CredentialSource::MacOsKeychain),
             "macOS Keychain"
