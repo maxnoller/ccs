@@ -142,32 +142,37 @@ impl DockerRunner {
     }
 
     /// Run the container with Claude Code
-    pub fn run(&self, extra_args: &[String], detach: bool) -> anyhow::Result<()> {
-        let mut cmd = Command::new(self.runtime.command());
-
-        cmd.arg("run").arg("--name").arg(&self.container_name);
+    pub fn run(&self, extra_args: &[String], detach: bool, dry_run: bool) -> anyhow::Result<()> {
+        // Build up argument list for the command
+        let mut args: Vec<String> = vec![
+            "run".to_string(),
+            "--name".to_string(),
+            self.container_name.clone(),
+        ];
 
         if detach {
             // Detached mode - run in background, don't remove on exit
-            cmd.arg("-d");
+            args.push("-d".to_string());
         } else {
             // Interactive mode - remove on exit
-            cmd.arg("--rm");
+            args.push("--rm".to_string());
             // Only use -it flags when we have a TTY
             if std::io::stdin().is_terminal() {
-                cmd.arg("-it");
+                args.push("-it".to_string());
             } else {
                 // Non-interactive mode - still need -i for stdin
-                cmd.arg("-i");
+                args.push("-i".to_string());
             }
         }
 
         // Add resource limits
         if let Some(ref mem) = self.config.docker.memory_limit {
-            cmd.arg("--memory").arg(mem);
+            args.push("--memory".to_string());
+            args.push(mem.clone());
         }
         if let Some(cpu) = self.config.docker.cpu_limit {
-            cmd.arg("--cpus").arg(cpu.to_string());
+            args.push("--cpus".to_string());
+            args.push(cpu.to_string());
         }
 
         // Load .env file from project if configured and exists
@@ -177,7 +182,8 @@ impl DockerRunner {
                 .workspace_path
                 .join(&self.config.docker.env_file_path);
             if env_path.exists() {
-                cmd.arg("--env-file").arg(&env_path);
+                args.push("--env-file".to_string());
+                args.push(env_path.display().to_string());
                 true
             } else {
                 false
@@ -188,20 +194,23 @@ impl DockerRunner {
 
         // Add volume mounts for git context
         for (host_path, container_path) in self.git_context.docker_mounts() {
-            cmd.arg("-v")
-                .arg(format!("{}:{}", host_path.display(), container_path));
+            args.push("-v".to_string());
+            args.push(format!("{}:{}", host_path.display(), container_path));
         }
 
         // Pass Claude credentials via environment variables (not mount)
         // This is more secure - the container gets the token but can't
         // access or modify host credential files
-        for (key, value) in auth::get_credential_env_vars(&self.credentials) {
-            cmd.arg("-e").arg(format!("{}={}", key, value));
+        let credential_env_vars = auth::get_credential_env_vars(&self.credentials);
+        for (key, value) in &credential_env_vars {
+            args.push("-e".to_string());
+            args.push(format!("{}={}", key, value));
         }
 
         // Mount MCP config if available
         if let Some(ref mcp_path) = self.mcp_config_path {
-            cmd.arg("-v").arg(format!(
+            args.push("-v".to_string());
+            args.push(format!(
                 "{}:/home/{}/.claude.json:ro",
                 mcp_path.display(),
                 self.config.docker.user
@@ -211,23 +220,41 @@ impl DockerRunner {
         // Add extra volumes from config
         for (host, container) in &self.config.docker.extra_volumes {
             let expanded_host = shellexpand::tilde(host);
-            cmd.arg("-v")
-                .arg(format!("{}:{}", expanded_host, container));
+            args.push("-v".to_string());
+            args.push(format!("{}:{}", expanded_host, container));
         }
 
         // Add environment variables from config
         for (key, value) in &self.config.docker.extra_env {
-            cmd.arg("-e").arg(format!("{}={}", key, value));
+            args.push("-e".to_string());
+            args.push(format!("{}={}", key, value));
         }
 
         // Set working directory
-        cmd.arg("-w").arg(&self.config.docker.workdir);
+        args.push("-w".to_string());
+        args.push(self.config.docker.workdir.clone());
 
         // Use the configured image
-        cmd.arg(&self.config.docker.image);
+        args.push(self.config.docker.image.clone());
 
         // Add any extra arguments for Claude
         for arg in extra_args {
+            args.push(arg.clone());
+        }
+
+        // Handle dry-run mode: print command and exit
+        if dry_run {
+            // Build the command string with proper quoting, redacting credentials
+            let cmd_parts: Vec<String> = std::iter::once(self.runtime.command().to_string())
+                .chain(args.iter().map(|arg| shell_quote(&redact_credentials(arg))))
+                .collect();
+            println!("{}", cmd_parts.join(" \\\n  "));
+            return Ok(());
+        }
+
+        // Build the actual Command
+        let mut cmd = Command::new(self.runtime.command());
+        for arg in &args {
             cmd.arg(arg);
         }
 
@@ -303,6 +330,56 @@ impl DockerRunner {
 
         Ok(())
     }
+}
+
+/// Quote a string for shell usage if it contains special characters
+fn shell_quote(s: &str) -> String {
+    // Check if string needs quoting
+    let needs_quoting = s.is_empty()
+        || s.contains(|c: char| {
+            c.is_whitespace()
+                || c == '"'
+                || c == '\''
+                || c == '\\'
+                || c == '$'
+                || c == '`'
+                || c == '!'
+                || c == '*'
+                || c == '?'
+                || c == '['
+                || c == ']'
+                || c == '{'
+                || c == '}'
+                || c == '('
+                || c == ')'
+                || c == '<'
+                || c == '>'
+                || c == '|'
+                || c == '&'
+                || c == ';'
+                || c == '#'
+        });
+
+    if !needs_quoting {
+        return s.to_string();
+    }
+
+    // Use single quotes, escaping any single quotes in the string
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Redact credential values in environment variable arguments for dry-run output
+fn redact_credentials(s: &str) -> String {
+    // Check for credential environment variable patterns
+    const SENSITIVE_PREFIXES: &[&str] = &["ANTHROPIC_API_KEY=", "CLAUDE_CODE_OAUTH_TOKEN="];
+
+    for prefix in SENSITIVE_PREFIXES {
+        if s.starts_with(prefix) {
+            return format!("{}[REDACTED]", prefix);
+        }
+    }
+
+    s.to_string()
 }
 
 /// List all running ccs sessions
@@ -728,5 +805,61 @@ mod tests {
         assert!(err_msg.contains("Multiple containers match 'foo'"));
         assert!(err_msg.contains("ccs-foo-123"));
         assert!(err_msg.contains("ccs-foo-456"));
+    }
+
+    #[test]
+    fn test_shell_quote_simple() {
+        assert_eq!(shell_quote("hello"), "hello");
+        assert_eq!(shell_quote("foo-bar"), "foo-bar");
+        assert_eq!(shell_quote("/path/to/file"), "/path/to/file");
+    }
+
+    #[test]
+    fn test_shell_quote_with_spaces() {
+        assert_eq!(shell_quote("hello world"), "'hello world'");
+        assert_eq!(shell_quote("/path/with spaces"), "'/path/with spaces'");
+    }
+
+    #[test]
+    fn test_shell_quote_with_special_chars() {
+        assert_eq!(shell_quote("$HOME"), "'$HOME'");
+        assert_eq!(shell_quote("foo;bar"), "'foo;bar'");
+        assert_eq!(shell_quote("test*"), "'test*'");
+    }
+
+    #[test]
+    fn test_shell_quote_with_single_quotes() {
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+        assert_eq!(shell_quote("don't stop"), "'don'\\''t stop'");
+    }
+
+    #[test]
+    fn test_shell_quote_empty() {
+        assert_eq!(shell_quote(""), "''");
+    }
+
+    #[test]
+    fn test_redact_credentials_api_key() {
+        assert_eq!(
+            redact_credentials("ANTHROPIC_API_KEY=sk-ant-abc123"),
+            "ANTHROPIC_API_KEY=[REDACTED]"
+        );
+    }
+
+    #[test]
+    fn test_redact_credentials_oauth_token() {
+        assert_eq!(
+            redact_credentials("CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xyz"),
+            "CLAUDE_CODE_OAUTH_TOKEN=[REDACTED]"
+        );
+    }
+
+    #[test]
+    fn test_redact_credentials_passthrough() {
+        assert_eq!(
+            redact_credentials("SOME_OTHER_VAR=value"),
+            "SOME_OTHER_VAR=value"
+        );
+        assert_eq!(redact_credentials("/path/to/file"), "/path/to/file");
     }
 }

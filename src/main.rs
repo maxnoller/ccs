@@ -52,6 +52,10 @@ struct Cli {
     #[arg(long)]
     build: bool,
 
+    /// Print the docker/podman command without executing it
+    #[arg(long)]
+    dry_run: bool,
+
     /// Open config file in editor
     #[arg(long)]
     config: bool,
@@ -131,9 +135,9 @@ fn main() -> anyhow::Result<()> {
     // Generate MCP configuration with resolved secrets
     let mcp_config_path = mcp::generate_mcp_config(&config)?;
 
-    // Run the Docker container
+    // Run the Docker container (or print command if dry-run)
     let runner = DockerRunner::new(&config, &git_context, mcp_config_path)?;
-    runner.run(&cli.claude_args, cli.detach)
+    runner.run(&cli.claude_args, cli.detach, cli.dry_run)
 }
 
 fn open_config_in_editor() -> anyhow::Result<()> {
