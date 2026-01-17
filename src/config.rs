@@ -56,12 +56,6 @@ pub struct DockerConfig {
     /// Working directory in container
     pub workdir: String,
 
-    /// Memory limit (e.g., "4g", "512m")
-    pub memory_limit: Option<String>,
-
-    /// CPU limit (e.g., 2.0 for 2 cores)
-    pub cpu_limit: Option<f32>,
-
     /// Load .env file from project directory into container
     pub load_env_file: bool,
 
@@ -93,8 +87,6 @@ impl Default for DockerConfig {
             extra_env: HashMap::new(),
             user: "claude".to_string(),
             workdir: "/workspace".to_string(),
-            memory_limit: None,
-            cpu_limit: None,
             load_env_file: true,
             env_file_path: ".env".to_string(),
         }

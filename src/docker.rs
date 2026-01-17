@@ -169,16 +169,6 @@ impl DockerRunner {
             }
         }
 
-        // Add resource limits
-        if let Some(ref mem) = self.config.docker.memory_limit {
-            args.push("--memory".to_string());
-            args.push(mem.clone());
-        }
-        if let Some(cpu) = self.config.docker.cpu_limit {
-            args.push("--cpus".to_string());
-            args.push(cpu.to_string());
-        }
-
         // Load .env file from project if configured and exists
         let env_file_loaded = if self.config.docker.load_env_file {
             let env_path = self
@@ -304,12 +294,6 @@ impl DockerRunner {
         }
         if env_file_loaded {
             println!("Loaded .env: {}", self.config.docker.env_file_path);
-        }
-        if let Some(ref mem) = self.config.docker.memory_limit {
-            println!("Memory limit: {}", mem);
-        }
-        if let Some(cpu) = self.config.docker.cpu_limit {
-            println!("CPU limit: {}", cpu);
         }
         println!();
 
@@ -717,17 +701,6 @@ impl RuntimeStatus {
             );
         }
 
-        // Resource limits
-        println!();
-        println!("Resource limits:");
-        match &config.docker.memory_limit {
-            Some(mem) => println!("  Memory: {}", mem),
-            None => println!("  Memory: unlimited"),
-        }
-        match config.docker.cpu_limit {
-            Some(cpu) => println!("  CPU: {} cores", cpu),
-            None => println!("  CPU: unlimited"),
-        }
     }
 }
 
