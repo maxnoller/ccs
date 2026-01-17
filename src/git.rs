@@ -1,5 +1,6 @@
 use git2::Repository;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 use crate::config::Config;
@@ -191,6 +192,15 @@ impl GitContext {
         })
     }
 
+    /// Generate a unique branch name for auto-worktree mode
+    pub fn generate_branch_name() -> String {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("ccs-{}", timestamp)
+    }
+
     /// Extract repository name from the repository
     fn extract_repo_name(repo: &Repository) -> Result<String, GitError> {
         // For worktrees, we need to get the name from the main repo
@@ -263,5 +273,15 @@ mod tests {
 
         let mounts = ctx.docker_mounts();
         assert_eq!(mounts.len(), 2);
+    }
+
+    #[test]
+    fn test_generate_branch_name() {
+        let name1 = GitContext::generate_branch_name();
+        assert!(name1.starts_with("ccs-"));
+
+        // Should contain a timestamp (numeric suffix)
+        let suffix = name1.strip_prefix("ccs-").unwrap();
+        assert!(suffix.parse::<u64>().is_ok());
     }
 }

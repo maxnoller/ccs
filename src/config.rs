@@ -104,7 +104,7 @@ impl Default for DockerConfig {
 impl Default for WorktreeConfig {
     fn default() -> Self {
         Self {
-            base_path: "../{repo_name}-worktrees".to_string(),
+            base_path: "{data_dir}/ccs/{repo_name}".to_string(),
         }
     }
 }
@@ -149,8 +149,16 @@ impl Config {
     }
 
     /// Resolve worktree base path with placeholders
+    /// Supports: {repo_name}, {data_dir} (XDG_DATA_HOME, defaults to ~/.local/share)
     pub fn resolve_worktree_path(&self, repo_name: &str, repo_parent: &std::path::Path) -> PathBuf {
-        let path_str = self.worktree.base_path.replace("{repo_name}", repo_name);
+        let mut path_str = self.worktree.base_path.replace("{repo_name}", repo_name);
+
+        // Replace {data_dir} with XDG_DATA_HOME
+        if path_str.contains("{data_dir}") {
+            let data_dir = dirs::data_dir()
+                .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"));
+            path_str = path_str.replace("{data_dir}", &data_dir.to_string_lossy());
+        }
 
         let path = PathBuf::from(&path_str);
 
@@ -214,8 +222,21 @@ mod tests {
     }
 
     #[test]
-    fn test_worktree_path_resolution() {
+    fn test_worktree_path_resolution_with_data_dir() {
         let config = Config::default();
+        let repo_parent = PathBuf::from("/home/user/projects");
+
+        let resolved = config.resolve_worktree_path("myrepo", &repo_parent);
+        // Default uses {data_dir}/ccs/{repo_name}, which resolves to XDG_DATA_HOME
+        let data_dir = dirs::data_dir()
+            .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"));
+        assert_eq!(resolved, data_dir.join("ccs").join("myrepo"));
+    }
+
+    #[test]
+    fn test_worktree_path_resolution_relative() {
+        let mut config = Config::default();
+        config.worktree.base_path = "../{repo_name}-worktrees".to_string();
         let repo_parent = PathBuf::from("/home/user/projects");
 
         let resolved = config.resolve_worktree_path("myrepo", &repo_parent);
