@@ -54,3 +54,7 @@ User config lives in `~/.config/ccs/`:
 - `mcp.toml` - MCP server definitions with secret references
 
 Example configs are in `config/` directory.
+
+## Releasing
+
+Releases are managed via release-please. Do not manually bump versions. Merge the release-please PR to create a new release.
