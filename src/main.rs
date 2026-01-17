@@ -5,7 +5,9 @@ mod git;
 mod mcp;
 mod secrets;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::{generate, Shell};
+use std::io;
 use std::path::PathBuf;
 
 use config::Config;
@@ -68,6 +70,10 @@ struct Cli {
     #[arg(long)]
     status: bool,
 
+    /// Generate shell completions for the specified shell
+    #[arg(long, value_name = "SHELL")]
+    completions: Option<Shell>,
+
     /// Extra arguments to pass to Claude Code
     #[arg(last = true)]
     claude_args: Vec<String>,
@@ -75,6 +81,13 @@ struct Cli {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    // Handle --completions flag: generate shell completions
+    if let Some(shell) = cli.completions {
+        let mut cmd = Cli::command();
+        generate(shell, &mut cmd, "ccs", &mut io::stdout());
+        return Ok(());
+    }
 
     // Handle --config flag: open config file in editor
     if cli.config {
