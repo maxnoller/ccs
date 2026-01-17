@@ -28,6 +28,10 @@ struct Cli {
     #[arg(short = 'b', long = "branch", requires = "new_worktree")]
     create_branch: bool,
 
+    /// Run directly in current directory without creating a worktree
+    #[arg(long, conflicts_with = "new_worktree")]
+    here: bool,
+
     /// Run container in detached mode (background)
     #[arg(short = 'd', long)]
     detach: bool,
@@ -126,10 +130,24 @@ fn main() -> anyhow::Result<()> {
     })?;
 
     // Set up git context (detect or create worktree)
+    // Default behavior: auto-create worktree unless --here is specified
     let git_context = if let Some(branch_name) = &cli.new_worktree {
+        // Explicit branch name provided with --new
         GitContext::create_worktree(&project_path, branch_name, cli.create_branch, &config)?
-    } else {
+    } else if cli.here {
+        // --here: run in current directory without creating worktree
         GitContext::detect(&project_path)?
+    } else {
+        // Default: auto-create worktree with generated branch name
+        let branch_name = GitContext::generate_branch_name();
+        match GitContext::create_worktree(&project_path, &branch_name, true, &config) {
+            Ok(ctx) => ctx,
+            Err(git::GitError::CannotCreateFromWorktree) => {
+                // Already in a worktree, just use it
+                GitContext::detect(&project_path)?
+            }
+            Err(e) => return Err(e.into()),
+        }
     };
 
     // Generate MCP configuration with resolved secrets
