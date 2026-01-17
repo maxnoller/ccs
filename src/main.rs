@@ -1,9 +1,11 @@
 mod auth;
+mod cleanup;
 mod config;
 mod docker;
 mod git;
 mod mcp;
 mod secrets;
+mod toolchain;
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
@@ -13,6 +15,7 @@ use std::path::PathBuf;
 use config::Config;
 use docker::{DockerRunner, RuntimeStatus};
 use git::GitContext;
+use toolchain::Toolchain;
 
 /// Claude Code Sandbox - Run Claude Code safely in Docker containers
 #[derive(Parser, Debug)]
@@ -97,6 +100,12 @@ fn main() -> anyhow::Result<()> {
     // Load configuration
     let config = Config::load()?;
 
+    // Lazy cleanup of orphaned worktrees (runs on every invocation)
+    let cleanup_result = cleanup::lazy_cleanup(&config);
+    if cleanup_result.had_changes() {
+        cleanup_result.print_summary();
+    }
+
     // Handle --status flag: show runtime status
     if cli.status {
         let status = RuntimeStatus::check(&config);
@@ -163,11 +172,17 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Detect project toolchain
+    let toolchain = Toolchain::detect(&git_context.workspace_path);
+    if !toolchain.is_empty() {
+        println!("Detected toolchain: {}", toolchain.tool_names().join(", "));
+    }
+
     // Generate MCP configuration with resolved secrets
     let mcp_config_path = mcp::generate_mcp_config(&config)?;
 
     // Run the Docker container (or print command if dry-run)
-    let runner = DockerRunner::new(&config, &git_context, mcp_config_path)?;
+    let runner = DockerRunner::new(&config, &git_context, mcp_config_path, toolchain)?;
     runner.run(&cli.claude_args, cli.detach, cli.dry_run)
 }
 

@@ -7,6 +7,7 @@ use thiserror::Error;
 use crate::auth::{self, ClaudeCredentials, CredentialSource};
 use crate::config::Config;
 use crate::git::GitContext;
+use crate::toolchain::Toolchain;
 
 #[derive(Error, Debug)]
 pub enum DockerError {
@@ -66,6 +67,7 @@ pub struct DockerRunner {
     mcp_config_path: Option<PathBuf>,
     container_name: String,
     credentials: ClaudeCredentials,
+    toolchain: Toolchain,
 }
 
 impl DockerRunner {
@@ -74,6 +76,7 @@ impl DockerRunner {
         config: &Config,
         git_context: &GitContext,
         mcp_config_path: Option<PathBuf>,
+        toolchain: Toolchain,
     ) -> Result<Self, DockerError> {
         let runtime = ContainerRuntime::detect()?;
         let container_name = generate_container_name(&git_context.repo_name);
@@ -86,6 +89,7 @@ impl DockerRunner {
             mcp_config_path,
             container_name,
             credentials,
+            toolchain,
         })
     }
 
@@ -230,6 +234,21 @@ impl DockerRunner {
             args.push(format!("{}={}", key, value));
         }
 
+        // Add toolchain install commands as environment variable
+        // This allows the container to install required tools on startup
+        if !self.toolchain.is_empty() {
+            let install_cmds = self.toolchain.install_commands().join(" && ");
+            args.push("-e".to_string());
+            args.push(format!("CCS_TOOLCHAIN_INSTALL={}", install_cmds));
+
+            // Also add individual tool names for reference
+            args.push("-e".to_string());
+            args.push(format!(
+                "CCS_TOOLCHAIN={}",
+                self.toolchain.tool_names().join(",")
+            ));
+        }
+
         // Set working directory
         args.push("-w".to_string());
         args.push(self.config.docker.workdir.clone());
@@ -371,11 +390,15 @@ fn shell_quote(s: &str) -> String {
 /// Redact credential values in environment variable arguments for dry-run output
 fn redact_credentials(s: &str) -> String {
     // Check for credential environment variable patterns
-    const SENSITIVE_PREFIXES: &[&str] = &["ANTHROPIC_API_KEY=", "CLAUDE_CODE_OAUTH_TOKEN="];
+    const SENSITIVE_PREFIXES: &[&str] = &[
+        "ANTHROPIC_API_KEY=",
+        "CLAUDE_CODE_OAUTH_TOKEN=",
+        "CCS_TOOLCHAIN_INSTALL=", // Long install commands, truncate for readability
+    ];
 
     for prefix in SENSITIVE_PREFIXES {
         if s.starts_with(prefix) {
-            return format!("{}[REDACTED]", prefix);
+            return format!("{}[...]", prefix);
         }
     }
 
@@ -842,7 +865,7 @@ mod tests {
     fn test_redact_credentials_api_key() {
         assert_eq!(
             redact_credentials("ANTHROPIC_API_KEY=sk-ant-abc123"),
-            "ANTHROPIC_API_KEY=[REDACTED]"
+            "ANTHROPIC_API_KEY=[...]"
         );
     }
 
@@ -850,7 +873,15 @@ mod tests {
     fn test_redact_credentials_oauth_token() {
         assert_eq!(
             redact_credentials("CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xyz"),
-            "CLAUDE_CODE_OAUTH_TOKEN=[REDACTED]"
+            "CLAUDE_CODE_OAUTH_TOKEN=[...]"
+        );
+    }
+
+    #[test]
+    fn test_redact_toolchain_install() {
+        assert_eq!(
+            redact_credentials("CCS_TOOLCHAIN_INSTALL=curl ... && make install"),
+            "CCS_TOOLCHAIN_INSTALL=[...]"
         );
     }
 
