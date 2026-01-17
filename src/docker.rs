@@ -441,24 +441,33 @@ fn resolve_container_name(runtime: ContainerRuntime, partial: &str) -> anyhow::R
             .map(|s| s.trim().to_string())
             .collect();
 
-        match names.len() {
-            0 => Err(anyhow::anyhow!("No container found matching '{}'", partial)),
-            1 => Ok(names[0].clone()),
-            _ => {
-                // Check for exact match
-                if let Some(exact) = names.iter().find(|n| n.as_str() == search_name) {
-                    Ok(exact.clone())
-                } else {
-                    Err(anyhow::anyhow!(
-                        "Multiple containers match '{}': {}",
-                        partial,
-                        names.join(", ")
-                    ))
-                }
-            }
-        }
+        select_container_match(names, partial, &search_name)
     } else {
         Ok(search_name)
+    }
+}
+
+/// Select the best container match from a list of names
+fn select_container_match(
+    mut names: Vec<String>,
+    partial: &str,
+    search_name: &str,
+) -> anyhow::Result<String> {
+    match names.len() {
+        0 => Err(anyhow::anyhow!("No container found matching '{}'", partial)),
+        1 => Ok(names.pop().unwrap()),
+        _ => {
+            // Check for exact match
+            if let Some(pos) = names.iter().position(|n| n == search_name) {
+                Ok(names.swap_remove(pos))
+            } else {
+                Err(anyhow::anyhow!(
+                    "Multiple containers match '{}': {}",
+                    partial,
+                    names.join(", ")
+                ))
+            }
+        }
     }
 }
 
@@ -670,5 +679,53 @@ mod shellexpand {
             }
         }
         std::borrow::Cow::Borrowed(path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_select_container_match_empty() {
+        let names = vec![];
+        let result = select_container_match(names, "foo", "ccs-foo");
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "No container found matching 'foo'"
+        );
+    }
+
+    #[test]
+    fn test_select_container_match_single() {
+        let names = vec!["ccs-foo-123".to_string()];
+        let result = select_container_match(names, "foo", "ccs-foo");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ccs-foo-123");
+    }
+
+    #[test]
+    fn test_select_container_match_multiple_exact() {
+        let names = vec![
+            "ccs-foo-123".to_string(),
+            "ccs-foo".to_string(),
+            "ccs-foobar-456".to_string(),
+        ];
+        // exact match for "ccs-foo"
+        let result = select_container_match(names, "foo", "ccs-foo");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ccs-foo");
+    }
+
+    #[test]
+    fn test_select_container_match_multiple_ambiguous() {
+        let names = vec!["ccs-foo-123".to_string(), "ccs-foo-456".to_string()];
+        let result = select_container_match(names, "foo", "ccs-foo");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Multiple containers match 'foo'"));
+        assert!(err_msg.contains("ccs-foo-123"));
+        assert!(err_msg.contains("ccs-foo-456"));
     }
 }
