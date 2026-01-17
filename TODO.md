@@ -2,22 +2,38 @@
 
 Feature ideas for ccs.
 
-## 1. `--dry-run` flag
+## 1. `--dry-run` flag ✅
 
-Show the exact docker/podman command that would be executed without actually running it. Useful for debugging and understanding what ccs is doing.
-
-**Files to modify:**
-- `src/main.rs` - Add CLI flag
-- `src/docker.rs` - Add dry-run logic to return command instead of executing
-
-**Implementation:**
-- Add `--dry-run` flag to clap Args
-- Modify `run_container` to optionally return the command string instead of executing
-- Print the full command with all arguments, volumes, env vars, etc.
+DONE - Implemented in commit c108233.
 
 ---
 
-## 2. `--completions <SHELL>` flag
+## 2. Default to worktree mode
+
+Change the default behavior so `ccs` automatically creates a new branch and worktree from the current branch, rather than operating directly on the working directory. This is safer and prevents accidental modifications to the main repo.
+
+**Current behavior:**
+- `ccs` runs container against current directory
+- `ccs --new BRANCH` creates worktree
+
+**New behavior:**
+- `ccs` auto-generates branch name (e.g., `ccs-<timestamp>` or `ccs-<short-hash>`) and creates worktree
+- `ccs --here` or `ccs --no-worktree` runs against current directory (opt-out)
+- `ccs --new BRANCH` still works as explicit branch name
+
+**Files to modify:**
+- `src/main.rs` - Change default behavior, add `--here` flag
+- `src/git.rs` - Add auto-generated branch name logic
+
+**Implementation:**
+- Generate unique branch name when no `--new` specified and not `--here`
+- Create worktree automatically in configured location
+- Add `--here` flag to preserve old behavior for power users
+- Print clear message about which worktree/branch is being used
+
+---
+
+## 3. `--completions <SHELL>` flag
 
 Generate shell completions for bash/zsh/fish using clap's `clap_complete` crate.
 
