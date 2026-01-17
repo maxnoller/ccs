@@ -1,62 +1,24 @@
 # TODO
 
-Feature ideas for ccs.
+Feature roadmap for ccs. See [GitHub Issues](https://github.com/maxnoller/ccs/issues) for details.
 
-## 1. `--dry-run` flag ✅
+## Completed
 
-DONE - Implemented in commit c108233.
+- [x] `--dry-run` flag - Show docker command without executing (c108233)
+- [x] Default to worktree mode - Auto-create worktrees in `~/.local/share/ccs/` (f4d8e9d)
 
----
+## In Progress
 
-## 2. Default to worktree mode
-
-Change the default behavior so `ccs` automatically creates a new branch and worktree from the current branch, rather than operating directly on the working directory. This is safer and prevents accidental modifications to the main repo.
-
-**Current behavior:**
-- `ccs` runs container against current directory
-- `ccs --new BRANCH` creates worktree
-
-**New behavior:**
-- `ccs` auto-generates branch name (e.g., `ccs-<timestamp>` or `ccs-<short-hash>`) and creates worktree
-- `ccs --here` or `ccs --no-worktree` runs against current directory (opt-out)
-- `ccs --new BRANCH` still works as explicit branch name
-
-**Files to modify:**
-- `src/main.rs` - Change default behavior, add `--here` flag
-- `src/git.rs` - Add auto-generated branch name logic
-
-**Implementation:**
-- Generate unique branch name when no `--new` specified and not `--here`
-- Create worktree automatically in configured location
-- Add `--here` flag to preserve old behavior for power users
-- Print clear message about which worktree/branch is being used
-
----
-
-## 3. `--completions <SHELL>` flag
-
-Generate shell completions for bash/zsh/fish using clap's `clap_complete` crate.
-
-**Files to modify:**
-- `Cargo.toml` - Add `clap_complete` dependency
-- `src/main.rs` - Add flag and completion generation logic
-
-**Implementation:**
-- Add `clap_complete` to dependencies
-- Add `--completions` flag that accepts shell type (bash, zsh, fish, powershell)
-- Generate and print completions to stdout
-
----
-
-## 3. `--preview-mcp` flag
-
-Show the resolved MCP config JSON (with secrets redacted) that would be passed to Claude. Useful for debugging MCP server configuration.
-
-**Files to modify:**
-- `src/main.rs` - Add CLI flag
-- `src/mcp.rs` - Add function to generate redacted preview
-
-**Implementation:**
-- Add `--preview-mcp` flag to clap Args
-- Create a version of MCP config generation that redacts secret values
-- Pretty-print the JSON to stdout
+| Issue | Feature | Description |
+|-------|---------|-------------|
+| [#8](https://github.com/maxnoller/ccs/issues/8) | `ccs init` | First-run wizard (non-interactive friendly) |
+| [#9](https://github.com/maxnoller/ccs/issues/9) | Shell completions | `--completions bash/zsh/fish` |
+| [#10](https://github.com/maxnoller/ccs/issues/10) | Smart naming | UUID session IDs + LLM-generated branch names |
+| [#11](https://github.com/maxnoller/ccs/issues/11) | Remove resource limits | Simplify config by removing memory/cpu limits |
+| [#12](https://github.com/maxnoller/ccs/issues/12) | Per-project config | `.ccs.toml` in repo root |
+| [#13](https://github.com/maxnoller/ccs/issues/13) | Improved status | Session details, disk usage, credential expiry |
+| [#14](https://github.com/maxnoller/ccs/issues/14) | Auto cleanup | Automatic worktree cleanup on session end |
+| [#15](https://github.com/maxnoller/ccs/issues/15) | Better errors | Error messages with actionable suggestions |
+| [#16](https://github.com/maxnoller/ccs/issues/16) | `logs --follow` | Real-time log tailing |
+| [#17](https://github.com/maxnoller/ccs/issues/17) | `ccs exec` | Run commands in running containers |
+| [#18](https://github.com/maxnoller/ccs/issues/18) | `--preview-mcp` | Show resolved MCP config with redacted secrets |
